@@ -6,23 +6,22 @@ cask "tv-yansit" do
 
   url "https://github.com/mstkyvz/tv-yansit/releases/download/v#{version}/TVYansit-#{version}.zip"
   name "TV Yansıt"
-  desc "Mirror your Mac screen or a single window to older smart TVs via their web browser"
+  desc "Mirror a screen or single window to older smart TVs via their web browser"
   homepage "https://github.com/mstkyvz/tv-yansit"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "TV Yansıt.app"
 
   # Uygulama notarize edilmedigi icin karantina isareti kaldirilir
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/TV Yansıt.app"],
-                   sudo: false
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/TV Yansıt.app"],
+        must_succeed:   false,
+        writable_paths: ["{{appdir}}/TV Yansıt.app"]
   end
 
-  zap trash: [
-    "~/Library/Preferences/com.tvyansit.app.plist",
-  ]
+  zap trash: "~/Library/Preferences/com.tvyansit.app.plist"
 
   caveats <<~EOS
     İlk açılışta Ekran Kaydı izni ver:
