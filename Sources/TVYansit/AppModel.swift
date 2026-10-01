@@ -28,12 +28,21 @@ final class AppModel: ObservableObject {
         var id: String { rawValue }
     }
 
+    enum StreamMode: String, CaseIterable, Identifiable {
+        case browser
+        case tvPlayer
+        var id: String { rawValue }
+        var title: String { self == .browser ? "Tarayıcı · düşük gecikme" : "TV oynatıcı · yüksek kalite" }
+    }
+
     @Published var tab: Tab = .displays
     @Published private(set) var displays: [CaptureSource] = []
     @Published private(set) var windows: [CaptureSource] = []
     @Published private(set) var selectedID: String?
     @Published private(set) var isRunning = false
-    @Published private(set) var clientCount = 0
+    @Published private(set) var browserClients = 0
+    @Published private(set) var playerClients = 0
+    var clientCount: Int { browserClients + playerClients }
     @Published private(set) var addresses: [LocalAddress] = []
     @Published private(set) var needsPermission = false
     @Published var message: String?
@@ -54,9 +63,46 @@ final class AppModel: ObservableObject {
         didSet { UserDefaults.standard.set(showsCursor, forKey: "showsCursor"); settingsChanged() }
     }
 
+    // MARK: TV oynatici (DLNA) ayarlari
+
+    @Published var streamMode: StreamMode = StreamMode(rawValue: UserDefaults.standard.string(forKey: "streamMode") ?? "") ?? .browser {
+        didSet {
+            UserDefaults.standard.set(streamMode.rawValue, forKey: "streamMode")
+            guard oldValue != streamMode else { return }
+            if streamMode == .tvPlayer, devices.isEmpty { Task { await discoverDevices() } }
+            if isRunning { Task { await stop() } }
+        }
+    }
+    @Published var videoHeight: Int = UserDefaults.standard.object(forKey: "videoHeight") as? Int ?? 1080 {
+        didSet { UserDefaults.standard.set(videoHeight, forKey: "videoHeight"); settingsChanged() }
+    }
+    @Published var videoFPS: Int = UserDefaults.standard.object(forKey: "videoFPS") as? Int ?? 60 {
+        didSet { UserDefaults.standard.set(videoFPS, forKey: "videoFPS"); settingsChanged() }
+    }
+    @Published var bitrateMbps: Int = UserDefaults.standard.object(forKey: "bitrateMbps") as? Int ?? 12 {
+        didSet { UserDefaults.standard.set(bitrateMbps, forKey: "bitrateMbps"); settingsChanged() }
+    }
+    @Published var sendsAudio: Bool = UserDefaults.standard.object(forKey: "sendsAudio") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(sendsAudio, forKey: "sendsAudio"); settingsChanged() }
+    }
+    @Published private(set) var devices: [DLNADevice] = []
+    @Published private(set) var isDiscovering = false
+    @Published var selectedDeviceID: String? = UserDefaults.standard.string(forKey: "deviceID") {
+        didSet { UserDefaults.standard.set(selectedDeviceID, forKey: "deviceID") }
+    }
+    @Published private(set) var tvVolume: Int?
+    @Published private(set) var tvMuted = false
+    private var volumeTask: Task<Void, Never>?
+    /// TV'ye son gonderilen akisin cozunurlugu ve ses durumu; degisirse TV akisi yeniden acar
+    private var playingFormat: (height: Int, audio: Bool)?
+
+    var selectedDevice: DLNADevice? {
+        devices.first { $0.id == selectedDeviceID }
+    }
+
     private let store = FrameStore()
-    private lazy var engine = CaptureEngine(store: store)
     private lazy var server = HTTPServer(store: store)
+    private lazy var engine = CaptureEngine(store: store, broadcaster: server.broadcaster)
     private var ownApplications: [SCRunningApplication] = []
     private var restartTask: Task<Void, Never>?
 
@@ -67,7 +113,13 @@ final class AppModel: ObservableObject {
             self.message = "Yakalama durdu: \(reason). Baska bir kaynak sec."
         }
         server.onClientCountChange = { [weak self] count in
-            self?.clientCount = count
+            self?.browserClients = count
+        }
+        server.broadcaster.onClientCountChange = { [weak self] count in
+            self?.playerClients = count
+        }
+        if streamMode == .tvPlayer {
+            Task { await discoverDevices() }
         }
         refreshAddresses()
     }
@@ -203,6 +255,10 @@ final class AppModel: ObservableObject {
             message = "Önce bir ekran veya pencere seç."
             return
         }
+        if streamMode == .tvPlayer, selectedDevice == nil {
+            message = "Önce yayın yapılacak TV'yi seç."
+            return
+        }
         do {
             try server.start(port: UInt16(clamping: port))
         } catch {
@@ -216,21 +272,53 @@ final class AppModel: ObservableObject {
         } catch {
             message = "Yakalama başlatılamadı: \(error.localizedDescription)"
             await stop()
+            return
+        }
+        if streamMode == .tvPlayer {
+            await sendToTV()
+        }
+    }
+
+    /// TV'ye "su adresi oynat" komutunu gonderir.
+    func sendToTV() async {
+        guard let device = selectedDevice, let ip = addresses.first?.ip else { return }
+        do {
+            try await DLNA.play(device, streamURL: "http://\(ip):\(port)/canli.ts", title: "TV Yansıt")
+            playingFormat = (videoHeight, sendsAudio)
+            await refreshVolume()
+        } catch {
+            message = "TV yayını açamadı: \(error.localizedDescription)"
         }
     }
 
     func stop() async {
         restartTask?.cancel()
+        if streamMode == .tvPlayer, isRunning, let device = selectedDevice {
+            await DLNA.stop(device)
+        }
         await engine.stop()
         server.stop()
         isRunning = false
-        clientCount = 0
+        playingFormat = nil
+        browserClients = 0
+        playerClients = 0
     }
 
     private func startCapture() async throws {
         guard let source = selected, let filter = makeFilter(for: source) else { return }
-        let (width, height) = outputSize(for: source)
-        try await engine.start(filter: filter, width: width, height: height, fps: fps, showsCursor: showsCursor)
+        switch streamMode {
+        case .browser:
+            let (width, height) = outputSize(for: source)
+            try await engine.start(filter: filter, width: width, height: height, fps: fps,
+                                   showsCursor: showsCursor, mode: .jpeg)
+        case .tvPlayer:
+            // TV oynaticilari standart 16:9 boyutlari sever; farkli oranlar siyah bantla sigdirilir
+            let height = videoHeight
+            let width = height * 16 / 9
+            try await engine.start(filter: filter, width: width, height: height, fps: videoFPS,
+                                   showsCursor: showsCursor,
+                                   mode: .video(bitrate: bitrateMbps * 1_000_000, audio: sendsAudio))
+        }
     }
 
     /// Kaynak degisince TV'deki sayfa yeniden yuklenmeden yeni goruntuye gecer.
@@ -240,6 +328,10 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             do {
                 try await self.startCapture()
+                if self.streamMode == .tvPlayer, let playing = self.playingFormat,
+                   playing.height != self.videoHeight || playing.audio != self.sendsAudio {
+                    await self.sendToTV()
+                }
             } catch {
                 self.message = "Yakalama başlatılamadı: \(error.localizedDescription)"
             }
@@ -259,6 +351,58 @@ final class AppModel: ObservableObject {
         width -= width % 2
         height -= height % 2
         return (max(width, 2), max(height, 2))
+    }
+
+    // MARK: - TV (DLNA)
+
+    func discoverDevices() async {
+        guard !isDiscovering else { return }
+        isDiscovering = true
+        refreshAddresses()
+        let found = await DLNA.discover(localIP: addresses.first?.ip)
+        isDiscovering = false
+        devices = found
+        if selectedDevice == nil {
+            selectedDeviceID = found.first?.id
+        }
+    }
+
+    func refreshVolume() async {
+        guard let device = selectedDevice else { return }
+        tvVolume = await DLNA.volume(device)
+        tvMuted = await DLNA.isMuted(device) ?? false
+    }
+
+    func changeVolume(by delta: Int) {
+        setVolume((tvVolume ?? 20) + delta)
+    }
+
+    /// Kaydirici hizli hareket edince TV'ye her adim yerine son deger gonderilir.
+    func setVolume(_ value: Int) {
+        let clamped = max(0, min(100, value))
+        tvVolume = clamped
+        guard let device = selectedDevice else { return }
+        volumeTask?.cancel()
+        volumeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                try await DLNA.setVolume(device, clamped)
+            } catch {
+                self?.message = error.localizedDescription
+            }
+        }
+    }
+
+    func toggleMute() async {
+        guard let device = selectedDevice else { return }
+        let muted = !tvMuted
+        do {
+            try await DLNA.setMuted(device, muted)
+            tvMuted = muted
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
     // MARK: - Izin

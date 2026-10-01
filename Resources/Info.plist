@@ -30,6 +30,11 @@
     <string>NSApplication</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>TV Yansıt, seçtiğin ekranı veya pencereyi TV'ye göndermek için ekran kaydı iznine ihtiyaç duyar.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSLocalNetworkUsageDescription</key>
     <string>TV Yansıt, aynı ağdaki TV'nin yayına bağlanabilmesi için yerel ağı kullanır.</string>
 </dict>

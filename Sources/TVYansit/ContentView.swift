@@ -34,7 +34,10 @@ struct ContentView: View {
                         .frame(width: 10, height: 10)
                     Text(statusText).font(.headline)
                 }
-                if let url = model.primaryURL {
+                if model.streamMode == .tvPlayer {
+                    Text(model.selectedDevice.map { "Yayın \($0.name) üzerinde açılacak" } ?? "Aşağıdan bir TV seç")
+                        .foregroundStyle(.secondary)
+                } else if let url = model.primaryURL {
                     HStack(spacing: 6) {
                         Text("TV tarayıcısında aç:").foregroundStyle(.secondary)
                         Text(url)
@@ -147,6 +150,34 @@ struct ContentView: View {
     // MARK: - Ayarlar
 
     private var settings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Picker("Mod", selection: $model.streamMode) {
+                    ForEach(AppModel.StreamMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 420)
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("Port")
+                    TextField("", value: $model.port, format: .number.grouping(.never))
+                        .frame(width: 60)
+                        .disabled(model.isRunning)
+                }
+            }
+
+            if model.streamMode == .browser {
+                browserSettings
+            } else {
+                playerSettings
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var browserSettings: some View {
         HStack(spacing: 20) {
             Picker("Akıcılık", selection: $model.fps) {
                 ForEach([5, 10, 15, 20, 30], id: \.self) { Text("\($0) fps").tag($0) }
@@ -154,11 +185,7 @@ struct ContentView: View {
             .frame(width: 150)
 
             Picker("Çözünürlük", selection: $model.maxWidth) {
-                Text("640").tag(640)
-                Text("960").tag(960)
-                Text("1280").tag(1280)
-                Text("1600").tag(1600)
-                Text("1920").tag(1920)
+                ForEach([640, 960, 1280, 1600, 1920], id: \.self) { Text("\($0)").tag($0) }
             }
             .frame(width: 170)
 
@@ -169,19 +196,104 @@ struct ContentView: View {
             }
 
             Toggle("İmleç", isOn: $model.showsCursor)
-
             Spacer()
-
-            HStack(spacing: 4) {
-                Text("Port")
-                TextField("", value: $model.port, format: .number.grouping(.never))
-                    .frame(width: 60)
-                    .disabled(model.isRunning)
-            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
         .help("Görüntü takılıyorsa akıcılığı, çözünürlüğü veya kaliteyi düşür.")
+    }
+
+    private var playerSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "tv")
+                Picker("TV", selection: $model.selectedDeviceID) {
+                    if model.devices.isEmpty {
+                        Text(model.isDiscovering ? "Aranıyor…" : "TV bulunamadı").tag(String?.none)
+                    }
+                    ForEach(model.devices) { device in
+                        Text(device.model.isEmpty ? device.name : "\(device.name) (\(device.model))")
+                            .tag(String?.some(device.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 320)
+                .disabled(model.isRunning)
+
+                if model.isDiscovering {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button {
+                        Task { await model.discoverDevices() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("TV'leri yeniden ara")
+                    .disabled(model.isRunning)
+                }
+
+                Spacer()
+
+                if model.isRunning, model.selectedDevice?.renderingControlURL != nil {
+                    volumeControls
+                }
+            }
+
+            HStack(spacing: 20) {
+                Picker("Çözünürlük", selection: $model.videoHeight) {
+                    Text("720p").tag(720)
+                    Text("1080p").tag(1080)
+                    Text("4K").tag(2160)
+                }
+                .frame(width: 170)
+
+                Picker("Akıcılık", selection: $model.videoFPS) {
+                    Text("30 fps").tag(30)
+                    Text("60 fps").tag(60)
+                }
+                .frame(width: 140)
+
+                Picker("Bit hızı", selection: $model.bitrateMbps) {
+                    ForEach([4, 8, 12, 20, 30, 50], id: \.self) { Text("\($0) Mbit/s").tag($0) }
+                }
+                .frame(width: 170)
+
+                Toggle("Ses", isOn: $model.sendsAudio)
+                Toggle("İmleç", isOn: $model.showsCursor)
+                Spacer()
+            }
+
+            Text("Görüntü TV'nin kendi oynatıcısında açılır. Akıcı ve seslidir, ama 1–2 saniye gecikme olur. Takılırsa bit hızını düşür.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var volumeControls: some View {
+        HStack(spacing: 6) {
+            Button {
+                Task { await model.toggleMute() }
+            } label: {
+                Image(systemName: model.tvMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 18)
+            }
+            .help(model.tvMuted ? "Sesi aç" : "Sessize al")
+
+            Button { model.changeVolume(by: -5) } label: { Image(systemName: "minus") }
+                .help("Sesi kıs")
+            Slider(
+                value: Binding(
+                    get: { Double(model.tvVolume ?? 0) },
+                    set: { model.setVolume(Int($0.rounded())) }
+                ),
+                in: 0...100
+            )
+            .frame(width: 120)
+            Button { model.changeVolume(by: 5) } label: { Image(systemName: "plus") }
+                .help("Sesi aç")
+            Text(model.tvVolume.map { "\($0)" } ?? "–")
+                .monospacedDigit()
+                .frame(width: 26, alignment: .trailing)
+        }
+        .buttonStyle(.borderless)
     }
 }
 

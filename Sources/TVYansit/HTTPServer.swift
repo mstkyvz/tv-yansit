@@ -6,8 +6,10 @@ import Network
 ///  /akis     multipart/x-mixed-replace MJPEG akisi
 ///  /yedek    MJPEG desteklemeyen tarayicilar icin tek tek resim yenileyen sayfa
 ///  /kare.jpg son kare
+///  /canli.ts TV oynaticisi (DLNA) icin H.264 + AAC MPEG-TS akisi
 final class HTTPServer {
     private let store: FrameStore
+    let broadcaster = TSBroadcaster()
     private let queue = DispatchQueue(label: "tvyansit.http")
     private let boundary = "tvyansitkare"
     private var listener: NWListener?
@@ -37,6 +39,7 @@ final class HTTPServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        broadcaster.disconnectAll()
         queue.async {
             self.streams.values.forEach { $0.cancel() }
             self.streams.removeAll()
@@ -53,8 +56,10 @@ final class HTTPServer {
                 connection.cancel()
                 return
             }
-            let path = Self.requestPath(data)
+            let (method, path) = Self.requestLine(data)
             switch path {
+            case "/canli.ts":
+                self.startTransportStream(connection, headOnly: method == "HEAD")
             case "/akis":
                 self.startStream(connection)
             case "/kare.jpg":
@@ -73,14 +78,32 @@ final class HTTPServer {
         }
     }
 
-    /// "GET /akis?t=123 HTTP/1.1" -> "/akis"
-    private static func requestPath(_ data: Data) -> String {
+    /// "GET /akis?t=123 HTTP/1.1" -> ("GET", "/akis")
+    private static func requestLine(_ data: Data) -> (String, String) {
         let text = String(decoding: data.prefix(2048), as: UTF8.self)
-        guard let line = text.split(separator: "\r\n", maxSplits: 1).first else { return "/" }
+        guard let line = text.split(separator: "\r\n", maxSplits: 1).first else { return ("GET", "/") }
         let parts = line.split(separator: " ")
-        guard parts.count >= 2 else { return "/" }
+        guard parts.count >= 2 else { return ("GET", "/") }
         let target = parts[1]
-        return String(target.split(separator: "?", maxSplits: 1).first ?? "/")
+        return (String(parts[0]), String(target.split(separator: "?", maxSplits: 1).first ?? "/"))
+    }
+
+    // MARK: - MPEG-TS akisi (DLNA)
+
+    static let dlnaContentFeatures = "DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+
+    private func startTransportStream(_ connection: NWConnection, headOnly: Bool) {
+        let head = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: video/mpeg\r\n"
+            + "transferMode.dlna.org: Streaming\r\n"
+            + "contentFeatures.dlna.org: \(Self.dlnaContentFeatures)\r\n"
+            + "Cache-Control: no-cache, no-store\r\n"
+            + "Connection: close\r\n\r\n"
+        if headOnly {
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in connection.cancel() })
+        } else {
+            broadcaster.add(connection, head: Data(head.utf8))
+        }
     }
 
     private func respond(_ connection: NWConnection, status: String, type: String, body: Data) {
