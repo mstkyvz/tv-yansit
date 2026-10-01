@@ -80,14 +80,15 @@ final class AudioEncoder {
         let profile = 1           // AAC LC (object type 2) - 1
         let frequencyIndex = 3    // 48 kHz
         let channelConfig = channels
-        return Data([
-            0xFF, 0xF1,
-            UInt8((profile << 6) | (frequencyIndex << 2) | (channelConfig >> 2)),
-            UInt8(((channelConfig & 3) << 6) | (frameLength >> 11)),
-            UInt8((frameLength >> 3) & 0xFF),
-            UInt8(((frameLength & 7) << 5) | 0x1F),
-            0xFC,
-        ])
+        var bytes = [UInt8](repeating: 0, count: 7)
+        bytes[0] = 0xFF
+        bytes[1] = 0xF1
+        bytes[2] = UInt8((profile << 6) | (frequencyIndex << 2) | (channelConfig >> 2))
+        bytes[3] = UInt8(((channelConfig & 3) << 6) | (frameLength >> 11))
+        bytes[4] = UInt8((frameLength >> 3) & 0xFF)
+        bytes[5] = UInt8(((frameLength & 7) << 5) | 0x1F)
+        bytes[6] = 0xFC
+        return Data(bytes)
     }
 
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {

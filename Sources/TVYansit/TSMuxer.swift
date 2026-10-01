@@ -100,14 +100,16 @@ final class TSMuxer {
             var adaptation = Data()
             if first, let pcr {
                 // PCR + rastgele erisim bayragi
-                let base = pcr & 0x1_FFFF_FFFF
-                adaptation = Data([
-                    0x00, // uzunluk sonra yazilir
-                    (randomAccess ? 0x40 : 0x00) | 0x10,
-                    UInt8((base >> 25) & 0xFF), UInt8((base >> 17) & 0xFF),
-                    UInt8((base >> 9) & 0xFF), UInt8((base >> 1) & 0xFF),
-                    UInt8((base & 1) << 7) | 0x7E, 0x00,
-                ])
+                let base: UInt64 = pcr & 0x1_FFFF_FFFF
+                let flags: UInt8 = randomAccess ? 0x50 : 0x10
+                var bytes: [UInt8] = [0x00, flags]   // ilk bayt (uzunluk) sonra yazilir
+                bytes.append(UInt8(truncatingIfNeeded: base >> 25))
+                bytes.append(UInt8(truncatingIfNeeded: base >> 17))
+                bytes.append(UInt8(truncatingIfNeeded: base >> 9))
+                bytes.append(UInt8(truncatingIfNeeded: base >> 1))
+                bytes.append(UInt8(truncatingIfNeeded: (base & 1) << 7) | 0x7E)
+                bytes.append(0x00)
+                adaptation = Data(bytes)
             }
 
             let remaining = stream.count - offset
@@ -147,14 +149,14 @@ final class TSMuxer {
     }
 
     private func timestamp(_ value: UInt64, marker: UInt8) -> Data {
-        let ts = value & 0x1_FFFF_FFFF
-        return Data([
-            marker | UInt8((ts >> 29) & 0x0E) | 0x01,
-            UInt8((ts >> 22) & 0xFF),
-            UInt8((ts >> 14) & 0xFE) | 0x01,
-            UInt8((ts >> 7) & 0xFF),
-            UInt8((ts << 1) & 0xFE) | 0x01,
-        ])
+        let ts: UInt64 = value & 0x1_FFFF_FFFF
+        var bytes = [UInt8](repeating: 0, count: 5)
+        bytes[0] = marker | (UInt8(truncatingIfNeeded: ts >> 29) & 0x0E) | 0x01
+        bytes[1] = UInt8(truncatingIfNeeded: ts >> 22)
+        bytes[2] = (UInt8(truncatingIfNeeded: ts >> 14) & 0xFE) | 0x01
+        bytes[3] = UInt8(truncatingIfNeeded: ts >> 7)
+        bytes[4] = (UInt8(truncatingIfNeeded: ts << 1) & 0xFE) | 0x01
+        return Data(bytes)
     }
 
     private func nextCC(_ pid: UInt16) -> UInt8 {
