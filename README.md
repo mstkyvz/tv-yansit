@@ -16,10 +16,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-green" alt="MIT"></a>
 </p>
 
-<p align="center">
-  <img src="docs/screenshot.png" width="720" alt="TV Yansıt ekran görüntüsü">
-</p>
-
 ---
 
 ## Neden?
