@@ -22,21 +22,31 @@
 
 Mac'ler ekranı yalnızca **AirPlay** ile yansıtır. 2018 öncesi LG, Samsung, Sony vb. TV'lerin çoğu ise yalnızca **Miracast** destekler. Bu yüzden Windows ve Android telefonlar TV'yi bulur ama Mac bulamaz.
 
-TV Yansıt bu sorunu TV'nin **web tarayıcısı** üzerinden çözer. Mac'te küçük bir sunucu çalıştırır ve seçtiğin ekranı ya da pencereyi, en eski tarayıcıların bile gösterebildiği **MJPEG** akışı olarak yayınlar. Deskreen gibi WebRTC kullanan araçlar eski TV tarayıcılarında beyaz ekran verirken bu yöntem orada da çalışır.
+TV Yansıt bu sorunu iki farklı yolla çözer:
+
+| Mod | Nasıl çalışır | En uygun kullanım |
+|---|---|---|
+| ⚡ **Tarayıcı** (varsayılan) | Seçtiğin ekranı en eski tarayıcıların bile gösterebildiği **MJPEG** akışı olarak TV'nin web tarayıcısına gönderir. Gecikme çok düşük (~0,3 sn). | Sunum, belge, uzak masaüstü, sanal makine |
+| 🎬 **TV oynatıcı** *(deneysel)* | Görüntüyü donanımla **H.264**'e, sesi **AAC**'ye kodlar ve **DLNA** ile TV'nin kendi video oynatıcısında açar. **1080p/4K, 60 fps, sesli.** Gecikme 1–2 sn. | Film, dizi, YouTube, video |
+
+Deskreen gibi WebRTC kullanan araçlar eski TV tarayıcılarında beyaz ekran verirken iki mod da bu TV'lerde çalışmak için tasarlandı.
 
 ```mermaid
 flowchart LR
-    A["🖥️ Mac<br/>ekran / pencere"] -->|ScreenCaptureKit| B["TV Yansıt<br/>JPEG + HTTP sunucu"]
-    B -->|"Wi‑Fi · MJPEG"| C["📺 TV tarayıcısı<br/>http://192.168.x.x:8080"]
+    A["🖥️ Mac<br/>ekran / pencere"] -->|ScreenCaptureKit| B["TV Yansıt"]
+    B -->|"⚡ MJPEG · HTTP"| C["📺 TV web tarayıcısı"]
+    B -->|"🎬 H.264 + AAC · DLNA"| D["📺 TV video oynatıcısı"]
 ```
 
 ## Özellikler
 
+- 🎬 **İki mod:** Düşük gecikmeli tarayıcı modu ya da 1080p/4K 60 fps sesli TV oynatıcı modu.
+- 🔊 **TV ses kontrolü:** TV oynatıcı modunda sesi aç, kıs ve sessize al. Uygulamadan TV'nin kendi sesi kontrol edilir.
 - 🖥️ **Ekran veya tek pencere seçimi:** Tüm ekranı ya da yalnızca bir uygulamanın penceresini (ör. UTM sanal makinesi, sunum, video oynatıcı) yayınla.
 - 🔁 **Canlı kaynak değiştirme:** Yayın sürerken başka bir pencere seç, TV'de sayfayı yenilemeden görüntü değişir.
 - 📺 **Eski tarayıcı uyumlu:** Sayfa yalnızca ES5 JavaScript kullanır. MJPEG desteklemeyen tarayıcılar için `/yedek` modu da var.
 - 👥 **Birden çok izleyici:** Aynı anda TV, telefon ve tablet bağlanabilir. Kare bir kez kodlanır, herkese gönderilir.
-- ⚙️ **Ayarlanabilir:** Akıcılık (5–30 fps), çözünürlük (640–1920) ve JPEG kalitesi yayın sırasında değiştirilebilir.
+- ⚙️ **Ayarlanabilir:** Tarayıcı modunda akıcılık, çözünürlük ve JPEG kalitesi; TV oynatıcı modunda 720p/1080p/4K, 30/60 fps, bit hızı ve ses ayarlanabilir.
 - 🪶 **Bağımlılık yok:** Yerel Swift ve SwiftUI ile yazıldı, yaklaşık 1 MB. ffmpeg, Python ya da Electron gerekmez.
 
 ## Kurulum
@@ -78,6 +88,17 @@ open "build/TV Yansıt.app"
 > [!TIP]
 > Görüntü takılıyorsa önce **çözünürlüğü** 960'a, sonra **akıcılığı** 10 fps'e düşür. Metin okunmuyorsa kaliteyi artır.
 
+### TV oynatıcı modu (deneysel)
+
+1. TV'de DLNA / "LG Connect Apps" / "Ekran paylaşımı" benzeri ayarın açık olduğundan emin ol.
+2. Uygulamanın altındaki seçiciden **TV oynatıcı · yüksek kalite** modunu seç. Ağdaki TV'ler otomatik listelenir.
+3. TV'yi, çözünürlüğü (720p/1080p/4K), akıcılığı (30/60 fps) ve bit hızını seç.
+4. **Yayını Başlat**'a bas. Görüntü ve ses TV'nin kendi oynatıcısında açılır.
+5. Yayın sırasında 🔇 − ＋ düğmeleri ve kaydırıcı ile TV'nin sesini kontrol edebilirsin.
+
+> [!NOTE]
+> Bu mod DLNA (UPnP AVTransport) destekleyen TV'lerde çalışır. Chromecast / Android TV cihazları genellikle DLNA oynatıcısı değildir. Onlar için Chrome'un **Yayınla** özelliğini kullan. Hangi TV'de çalışıp çalışmadığını bir issue ile bildirirsen listeye ekleriz.
+
 ## Sık sorulan sorular
 
 <details>
@@ -98,13 +119,13 @@ Sayfanın altındaki **yedek moda** bağlantısına tıkla ya da adresin sonuna 
 <details>
 <summary><b>Ses gidiyor mu?</b></summary>
 
-Hayır, şimdilik yalnızca görüntü gider. Sesi Mac'ten, Bluetooth hoparlörden ya da TV'ye bağlı bir ses sisteminden dinleyebilirsin.
+**TV oynatıcı** modunda evet: Mac'in sesi AAC olarak TV'ye gider ve uygulamadan TV'nin sesini kontrol edebilirsin. **Tarayıcı** modunda yalnızca görüntü gider.
 </details>
 
 <details>
 <summary><b>Gecikme ne kadar?</b></summary>
 
-Yerel ağda genellikle 0,2–0,5 saniye. Sunum, belge, tarayıcı ve uzak masaüstü için uygun. Hızlı oyunlar için uygun değil.
+**Tarayıcı** modunda genellikle 0,2–0,5 saniye: sunum, belge ve uzak masaüstü için uygun. **TV oynatıcı** modunda 1–2 saniye: video için ideal, fare kullanımında hissedilir. Hızlı oyunlar için iki mod da uygun değil.
 </details>
 
 <details>
@@ -117,9 +138,12 @@ Web tarayıcısı olan hemen her Smart TV'de çalışır: LG webOS (2014+), Sams
 
 | Bileşen | Görevi |
 |---|---|
-| `CaptureEngine` | ScreenCaptureKit ile seçilen ekranı veya pencereyi yakalar, her kareyi Core Image ile JPEG'e çevirir |
+| `CaptureEngine` | ScreenCaptureKit ile seçilen ekranı/pencereyi ve sistem sesini yakalar |
+| `VideoEncoder` / `AudioEncoder` | VideoToolbox ile donanımsal H.264, AVAudioConverter ile AAC kodlama |
+| `TSMuxer` / `TSBroadcaster` | Video ve sesi MPEG-TS'e paketler ve `/canli.ts` üzerinden TV'ye akıtır |
+| `DLNA` | SSDP ile TV'leri bulur; AVTransport (oynat/durdur) ve RenderingControl (ses) komutlarını gönderir |
 | `FrameStore` | Son kareyi tutar ve bekleyen istemcilere dağıtır. Yavaş istemciler kare atlar, gecikme birikmez |
-| `HTTPServer` | Network.framework ile `/`, `/akis` (multipart MJPEG), `/yedek` ve `/kare.jpg` yollarını sunar |
+| `HTTPServer` | Network.framework ile `/`, `/akis` (MJPEG), `/yedek`, `/kare.jpg` ve `/canli.ts` yollarını sunar |
 | `AppModel` / `ContentView` | SwiftUI arayüzü: kaynak listesi ve önizlemeler, ayarlar, yerel IP tespiti |
 
 `python/tv_yansit.py` dosyası, ffmpeg ile çalışan ilk prototiptir. Tek dosyalık bir alternatif olarak durur.
@@ -134,4 +158,4 @@ Hata bildirimleri ve pull request'ler memnuniyetle karşılanır. Özellikle far
 
 ---
 
-<sub><b>English:</b> TV Yansıt mirrors a Mac screen or a single window to older smart TVs without AirPlay (e.g. 2017 LG webOS) through the TV's built‑in web browser, using an MJPEG stream that even very old browsers can display. Native Swift/SwiftUI with ScreenCaptureKit and no dependencies. Install with <code>brew install --cask mstkyvz/tap/tv-yansit</code>.</sub>
+<sub><b>English:</b> TV Yansıt mirrors a Mac screen or a single window to older smart TVs without AirPlay (e.g. 2017 LG webOS). Browser mode streams low‑latency MJPEG to the TV's built‑in web browser; the experimental TV player mode sends hardware‑encoded H.264 (up to 4K60) with AAC audio over DLNA, with TV volume control. Native Swift/SwiftUI with ScreenCaptureKit and no dependencies. Install with <code>brew install --cask mstkyvz/tap/tv-yansit</code>.</sub>
