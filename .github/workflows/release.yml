@@ -1,0 +1,32 @@
+name: Release
+
+# v1.2.3 gibi bir etiket gonderilince uygulamayi derler ve GitHub Release olusturur.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" ./scripts/build.sh --zip
+
+      - name: Release olustur
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="build/TVYansit-$VERSION.zip"
+          SHA=$(shasum -a 256 "$ZIP" | cut -d' ' -f1)
+          gh release create "$GITHUB_REF_NAME" "$ZIP" \
+            --title "TV Yansıt $VERSION" \
+            --notes "Homebrew: \`brew install --cask mstkyvz/tap/tv-yansit\`
+
+          SHA-256: \`$SHA\`"
