@@ -18,6 +18,8 @@ final class TSBroadcaster {
     private var muxer = TSMuxer(hasAudio: true)
     private var clients: [ObjectIdentifier: Client] = [:]
     private var baseTime: CMTime?
+    /// Chromecast icin canli HLS parcalari
+    private let hls = HLSSegmenter()
 
     var onClientCountChange: ((Int) -> Void)?
 
@@ -28,6 +30,7 @@ final class TSBroadcaster {
             if self.muxer.hasAudio != hasAudio {
                 self.muxer = TSMuxer(hasAudio: hasAudio)
                 self.baseTime = nil
+                self.hls.discontinuity()
             }
             self.clients.values.forEach { $0.waitingForKeyframe = true }
         }
@@ -41,13 +44,16 @@ final class TSBroadcaster {
             // PCR, PTS'ten 300 ms once: oynaticiya cozme payi birakir
             let packets = self.muxer.video(annexB: annexB, pts: pts90, pcr: pts90 - 27_000, isKeyframe: isKeyframe)
             self.broadcast(packets, isKeyframe: isKeyframe)
+            self.hls.appendVideo(packets, pts: pts90, isKeyframe: isKeyframe, hasAudio: self.muxer.hasAudio)
         }
     }
 
     func audio(_ adts: Data, pts: CMTime) {
         queue.async {
             guard self.baseTime != nil, let pts90 = self.ticks(pts) else { return }
-            self.broadcast(self.muxer.audio(adts: adts, pts: pts90), isKeyframe: false)
+            let packets = self.muxer.audio(adts: adts, pts: pts90)
+            self.broadcast(packets, isKeyframe: false)
+            self.hls.appendAudio(packets, pts: pts90)
         }
     }
 
@@ -59,6 +65,12 @@ final class TSBroadcaster {
         guard seconds > 0 else { return nil }
         return UInt64(seconds * 90_000)
     }
+
+    // MARK: - HLS
+
+    var hlsPlaylist: String? { queue.sync { hls.playlist() } }
+    var hlsSegmentCount: Int { queue.sync { hls.readyCount } }
+    func hlsSegment(_ sequence: Int) -> Data? { queue.sync { hls.segment(sequence) } }
 
     // MARK: - Istemciler
 
@@ -90,6 +102,7 @@ final class TSBroadcaster {
             self.clients.removeAll()
             self.muxer = TSMuxer(hasAudio: self.muxer.hasAudio)
             self.baseTime = nil
+            self.hls.reset()
             self.notifyCount()
         }
     }
