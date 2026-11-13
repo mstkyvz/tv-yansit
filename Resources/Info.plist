@@ -35,6 +35,10 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_googlecast._tcp</string>
+    </array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>TV Yansıt, aynı ağdaki TV'nin yayına bağlanabilmesi için yerel ağı kullanır.</string>
 </dict>

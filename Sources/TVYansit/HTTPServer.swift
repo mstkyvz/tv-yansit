@@ -7,6 +7,7 @@ import Network
 ///  /yedek    MJPEG desteklemeyen tarayicilar icin tek tek resim yenileyen sayfa
 ///  /kare.jpg son kare
 ///  /canli.ts TV oynaticisi (DLNA) icin H.264 + AAC MPEG-TS akisi
+///  /canli.m3u8, /hls/N.ts  Chromecast icin ayni akisin canli HLS hali
 final class HTTPServer {
     private let store: FrameStore
     let broadcaster = TSBroadcaster()
@@ -57,7 +58,26 @@ final class HTTPServer {
                 return
             }
             let (method, path) = Self.requestLine(data)
+            if method == "OPTIONS" {
+                self.respond(connection, status: "204 No Content", type: "text/plain", body: Data())
+                return
+            }
+            if path.hasPrefix("/hls/") {
+                let name = path.dropFirst("/hls/".count).replacingOccurrences(of: ".ts", with: "")
+                if let sequence = Int(name), let segment = self.broadcaster.hlsSegment(sequence) {
+                    self.respond(connection, status: "200 OK", type: "video/mp2t", body: segment)
+                } else {
+                    self.respond(connection, status: "404 Not Found", type: "text/plain", body: Data())
+                }
+                return
+            }
             switch path {
+            case "/canli.m3u8":
+                if let playlist = self.broadcaster.hlsPlaylist {
+                    self.respond(connection, status: "200 OK", type: "application/vnd.apple.mpegurl", body: Data(playlist.utf8))
+                } else {
+                    self.respond(connection, status: "503 Service Unavailable", type: "text/plain", body: Data("Henuz parca yok".utf8))
+                }
             case "/canli.ts":
                 self.startTransportStream(connection, headOnly: method == "HEAD")
             case "/akis":
@@ -110,6 +130,8 @@ final class HTTPServer {
         let head = "HTTP/1.1 \(status)\r\n"
             + "Content-Type: \(type)\r\n"
             + "Content-Length: \(body.count)\r\n"
+            + "Access-Control-Allow-Origin: *\r\n"
+            + "Access-Control-Allow-Headers: *\r\n"
             + "Cache-Control: no-cache, no-store, must-revalidate\r\n"
             + "Pragma: no-cache\r\n"
             + "Connection: close\r\n\r\n"

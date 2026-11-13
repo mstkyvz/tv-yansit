@@ -24,8 +24,10 @@ sed "s/__VERSION__/$VERSION/g" Resources/Info.plist > "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 printf "APPL????" > "$APP/Contents/PkgInfo"
 
-# Ad-hoc imza: ekran kaydi izninin calismasi icin gerekli
-codesign --force --deep --sign - "$APP"
+# Imza: ekran kaydi izni icin gerekli. Ad-hoc (-) imza her derlemede degisir ve
+# macOS izni sifirlar; kalici bir sertifikayla imzalamak icin:
+#   SIGN_IDENTITY="Apple Development: Ad Soyad (TAKIMID)" ./scripts/build.sh
+codesign --force --deep --sign "${SIGN_IDENTITY:--}" "$APP"
 rm -rf build/arm64 build/x86_64
 
 if [[ "${1:-}" == "--zip" ]]; then

@@ -85,7 +85,7 @@ final class AppModel: ObservableObject {
     @Published var sendsAudio: Bool = UserDefaults.standard.object(forKey: "sendsAudio") as? Bool ?? true {
         didSet { UserDefaults.standard.set(sendsAudio, forKey: "sendsAudio"); settingsChanged() }
     }
-    @Published private(set) var devices: [DLNADevice] = []
+    @Published private(set) var devices: [TVDevice] = []
     @Published private(set) var isDiscovering = false
     @Published var selectedDeviceID: String? = UserDefaults.standard.string(forKey: "deviceID") {
         didSet { UserDefaults.standard.set(selectedDeviceID, forKey: "deviceID") }
@@ -93,10 +93,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var tvVolume: Int?
     @Published private(set) var tvMuted = false
     private var volumeTask: Task<Void, Never>?
+    /// Chromecast'e acik oturum (yayin suresince)
+    private var castSession: CastSession?
     /// TV'ye son gonderilen akisin cozunurlugu ve ses durumu; degisirse TV akisi yeniden acar
     private var playingFormat: (height: Int, audio: Bool)?
 
-    var selectedDevice: DLNADevice? {
+    var selectedDevice: TVDevice? {
         devices.first { $0.id == selectedDeviceID }
     }
 
@@ -283,7 +285,23 @@ final class AppModel: ObservableObject {
     func sendToTV() async {
         guard let device = selectedDevice, let ip = addresses.first?.ip else { return }
         do {
-            try await DLNA.play(device, streamURL: "http://\(ip):\(port)/canli.ts", title: "TV Yansıt")
+            switch device.kind {
+            case .dlna(let dlna):
+                try await DLNA.play(dlna, streamURL: "http://\(ip):\(port)/canli.ts", title: "TV Yansıt")
+            case .cast(let cast):
+                // Oynatici acilmadan once listede birkac parca hazir olsun
+                for _ in 0 ..< 40 where server.broadcaster.hlsSegmentCount < 2 {
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                }
+                let session: CastSession
+                if let existing = castSession, existing.isOpen {
+                    session = existing
+                } else {
+                    session = try await CastSession.open(cast)
+                    castSession = session
+                }
+                try await session.play(url: "http://\(ip):\(port)/canli.m3u8", title: "TV Yansıt")
+            }
             playingFormat = (videoHeight, sendsAudio)
             await refreshVolume()
         } catch {
@@ -294,8 +312,13 @@ final class AppModel: ObservableObject {
     func stop() async {
         restartTask?.cancel()
         if streamMode == .tvPlayer, isRunning, let device = selectedDevice {
-            await DLNA.stop(device)
+            switch device.kind {
+            case .dlna(let dlna): await DLNA.stop(dlna)
+            case .cast: await castSession?.stop()
+            }
         }
+        castSession?.close()
+        castSession = nil
         await engine.stop()
         server.stop()
         isRunning = false
@@ -353,13 +376,18 @@ final class AppModel: ObservableObject {
         return (max(width, 2), max(height, 2))
     }
 
-    // MARK: - TV (DLNA)
+    // MARK: - TV (DLNA / Google Cast)
 
     func discoverDevices() async {
         guard !isDiscovering else { return }
         isDiscovering = true
         refreshAddresses()
-        let found = await DLNA.discover(localIP: addresses.first?.ip)
+        async let dlna = DLNA.discover(localIP: addresses.first?.ip)
+        async let cast = CastDiscovery.discover()
+        let castDevices = await cast
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map { TVDevice(kind: .cast($0)) }
+        let found = castDevices + (await dlna).map { TVDevice(kind: .dlna($0)) }
         isDiscovering = false
         devices = found
         if selectedDevice == nil {
@@ -369,8 +397,16 @@ final class AppModel: ObservableObject {
 
     func refreshVolume() async {
         guard let device = selectedDevice else { return }
-        tvVolume = await DLNA.volume(device)
-        tvMuted = await DLNA.isMuted(device) ?? false
+        switch device.kind {
+        case .dlna(let dlna):
+            tvVolume = await DLNA.volume(dlna)
+            tvMuted = await DLNA.isMuted(dlna) ?? false
+        case .cast:
+            if let volume = await castSession?.currentVolume() {
+                tvVolume = Int((volume.level * 100).rounded())
+                tvMuted = volume.muted
+            }
+        }
     }
 
     func changeVolume(by delta: Int) {
@@ -387,7 +423,10 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
             do {
-                try await DLNA.setVolume(device, clamped)
+                switch device.kind {
+                case .dlna(let dlna): try await DLNA.setVolume(dlna, clamped)
+                case .cast: self?.castSession?.setVolume(Double(clamped) / 100)
+                }
             } catch {
                 self?.message = error.localizedDescription
             }
@@ -398,7 +437,10 @@ final class AppModel: ObservableObject {
         guard let device = selectedDevice else { return }
         let muted = !tvMuted
         do {
-            try await DLNA.setMuted(device, muted)
+            switch device.kind {
+            case .dlna(let dlna): try await DLNA.setMuted(dlna, muted)
+            case .cast: castSession?.setMuted(muted)
+            }
             tvMuted = muted
         } catch {
             message = error.localizedDescription

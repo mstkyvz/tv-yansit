@@ -210,7 +210,8 @@ struct ContentView: View {
                         Text(model.isDiscovering ? "Aranıyor…" : "TV bulunamadı").tag(String?.none)
                     }
                     ForEach(model.devices) { device in
-                        Text(device.model.isEmpty ? device.name : "\(device.name) (\(device.model))")
+                        Text(device.model.isEmpty ? "\(device.name) · \(device.protocolName)"
+                             : "\(device.name) (\(device.model)) · \(device.protocolName)")
                             .tag(String?.some(device.id))
                     }
                 }
@@ -232,13 +233,14 @@ struct ContentView: View {
 
                 Spacer()
 
-                if model.isRunning, model.selectedDevice?.renderingControlURL != nil {
+                if model.isRunning, model.selectedDevice?.supportsVolume == true {
                     volumeControls
                 }
             }
 
             HStack(spacing: 20) {
                 Picker("Çözünürlük", selection: $model.videoHeight) {
+                    Text("540p").tag(540)
                     Text("720p").tag(720)
                     Text("1080p").tag(1080)
                     Text("4K").tag(2160)
@@ -246,13 +248,12 @@ struct ContentView: View {
                 .frame(width: 170)
 
                 Picker("Akıcılık", selection: $model.videoFPS) {
-                    Text("30 fps").tag(30)
-                    Text("60 fps").tag(60)
+                    ForEach([10, 15, 24, 30, 60], id: \.self) { Text("\($0) fps").tag($0) }
                 }
                 .frame(width: 140)
 
                 Picker("Bit hızı", selection: $model.bitrateMbps) {
-                    ForEach([4, 8, 12, 20, 30, 50], id: \.self) { Text("\($0) Mbit/s").tag($0) }
+                    ForEach([1, 2, 3, 4, 6, 8, 12, 20, 30, 50], id: \.self) { Text("\($0) Mbit/s").tag($0) }
                 }
                 .frame(width: 170)
 
@@ -261,7 +262,9 @@ struct ContentView: View {
                 Spacer()
             }
 
-            Text("Görüntü TV'nin kendi oynatıcısında açılır. Akıcı ve seslidir, ama 1–2 saniye gecikme olur. Takılırsa bit hızını düşür.")
+            Text(model.selectedDevice?.isCast == true
+                 ? "Görüntü TV'nin Chromecast'inde (Google Cast) açılır. Akıcı ve seslidir, gecikme yaklaşık 2–3 saniyedir. Takılırsa bit hızını düşür."
+                 : "Görüntü TV'nin kendi oynatıcısında açılır. Akıcı ve seslidir, ama 1–2 saniye gecikme olur. Takılırsa bit hızını düşür.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

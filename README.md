@@ -40,13 +40,14 @@ flowchart LR
 
 ## Özellikler
 
+- 📡 **Google Cast:** Chromecast ve Android TV / Google TV cihazlarına (ör. Xiaomi Mi TV) doğrudan yayın.
 - 🎬 **İki mod:** Düşük gecikmeli tarayıcı modu ya da 1080p/4K 60 fps sesli TV oynatıcı modu.
 - 🔊 **TV ses kontrolü:** TV oynatıcı modunda sesi aç, kıs ve sessize al. Uygulamadan TV'nin kendi sesi kontrol edilir.
 - 🖥️ **Ekran veya tek pencere seçimi:** Tüm ekranı ya da yalnızca bir uygulamanın penceresini (ör. UTM sanal makinesi, sunum, video oynatıcı) yayınla.
 - 🔁 **Canlı kaynak değiştirme:** Yayın sürerken başka bir pencere seç, TV'de sayfayı yenilemeden görüntü değişir.
 - 📺 **Eski tarayıcı uyumlu:** Sayfa yalnızca ES5 JavaScript kullanır. MJPEG desteklemeyen tarayıcılar için `/yedek` modu da var.
 - 👥 **Birden çok izleyici:** Aynı anda TV, telefon ve tablet bağlanabilir. Kare bir kez kodlanır, herkese gönderilir.
-- ⚙️ **Ayarlanabilir:** Tarayıcı modunda akıcılık, çözünürlük ve JPEG kalitesi; TV oynatıcı modunda 720p/1080p/4K, 30/60 fps, bit hızı ve ses ayarlanabilir.
+- ⚙️ **Ayarlanabilir:** Tarayıcı modunda akıcılık, çözünürlük ve JPEG kalitesi; TV oynatıcı modunda 540p–4K, 10–60 fps, 1–50 Mbit/s bit hızı ve ses ayarlanabilir.
 - 🪶 **Bağımlılık yok:** Yerel Swift ve SwiftUI ile yazıldı, yaklaşık 1 MB. ffmpeg, Python ya da Electron gerekmez.
 
 ## Kurulum
@@ -92,12 +93,14 @@ open "build/TV Yansıt.app"
 
 1. TV'de DLNA / "LG Connect Apps" / "Ekran paylaşımı" benzeri ayarın açık olduğundan emin ol.
 2. Uygulamanın altındaki seçiciden **TV oynatıcı · yüksek kalite** modunu seç. Ağdaki TV'ler otomatik listelenir.
-3. TV'yi, çözünürlüğü (720p/1080p/4K), akıcılığı (30/60 fps) ve bit hızını seç.
+3. TV'yi, çözünürlüğü (540p/720p/1080p/4K), akıcılığı (10–60 fps) ve bit hızını (1–50 Mbit/s) seç. Ağ yavaşsa düşük bit hızı ve fps seç.
 4. **Yayını Başlat**'a bas. Görüntü ve ses TV'nin kendi oynatıcısında açılır.
 5. Yayın sırasında 🔇 − ＋ düğmeleri ve kaydırıcı ile TV'nin sesini kontrol edebilirsin.
 
 > [!NOTE]
-> Bu mod DLNA (UPnP AVTransport) destekleyen TV'lerde çalışır. Chromecast / Android TV cihazları genellikle DLNA oynatıcısı değildir. Onlar için Chrome'un **Yayınla** özelliğini kullan. Hangi TV'de çalışıp çalışmadığını bir issue ile bildirirsen listeye ekleriz.
+> Bu mod iki tür TV ile çalışır: **DLNA** (UPnP AVTransport) oynatıcıları ve **Google Cast** cihazları (Chromecast, Android TV / Google TV, ör. Xiaomi Mi TV). Listede her TV'nin yanında `DLNA` ya da `Cast` yazar. Cast'te görüntü canlı HLS olarak TV'nin Chromecast oynatıcısına gönderilir; gecikme yaklaşık 2–3 sn olur.
+>
+> Gerçek **Miracast** (Wi‑Fi Direct) desteklenmez: macOS uygulamalara Wi‑Fi Direct erişimi vermez. Android TV'lerde bunun yerine Cast kullanılır.
 
 ## Sık sorulan sorular
 

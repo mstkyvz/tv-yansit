@@ -9,7 +9,14 @@ final class VideoEncoder {
     private var session: VTCompressionSession?
     private let output: Output
 
-    init(width: Int, height: Int, fps: Int, bitrate: Int, output: @escaping Output) throws {
+    /// Anahtar kare araligi (sn). HLS parcalari anahtar karelerden bolundugu icin
+    /// parca suresini, dolayisiyla Chromecast gecikmesini belirler.
+    static var keyframeInterval: Double {
+        Double(ProcessInfo.processInfo.environment["TVY_HLS_SEG"] ?? "") ?? HLSSegmenter.defaultSegmentDuration
+    }
+
+    init(width: Int, height: Int, fps: Int, bitrate: Int, keyframeInterval: Double = VideoEncoder.keyframeInterval,
+         output: @escaping Output) throws {
         self.output = output
 
         let spec: [CFString: Any] = [
@@ -42,9 +49,9 @@ final class VideoEncoder {
             kVTCompressionPropertyKey_AverageBitRate: bitrate,
             // Ani hareketlerde tamponu tasirmamak icin ust sinir (bayt/saniye)
             kVTCompressionPropertyKey_DataRateLimits: [bitrate / 8 * 2, 1] as CFArray,
-            // Saniyede bir anahtar kare: yayina baglanan TV en fazla 1 sn bekler
-            kVTCompressionPropertyKey_MaxKeyFrameInterval: fps,
-            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 1,
+            // Sik anahtar kare: yayina baglanan TV kisa surede baslar, HLS parcalari kisa olur
+            kVTCompressionPropertyKey_MaxKeyFrameInterval: max(1, Int((Double(fps) * keyframeInterval).rounded())),
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: keyframeInterval,
         ]
         VTSessionSetProperties(session, propertyDictionary: properties as CFDictionary)
         VTCompressionSessionPrepareToEncodeFrames(session)
